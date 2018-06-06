@@ -10,7 +10,7 @@ Thanks to project [peda](https://github.com/longld/peda).actually,CDB-PIG is ped
 ## KEY FEATURES:
 * `registers`,`disassemble`,`stack` in every step
 * use `cdbinit` to run command in the start of cdb
-* you can customize your command in `pig_cmd.py`,please comply with the standard.Here is the demo code:
+* you can customize your command in `pig.py`,please comply with the standard.Here is the demo code:
 ```
 	def test(self, *args):
 		"""
