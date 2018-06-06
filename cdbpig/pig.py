@@ -831,13 +831,17 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		if depth <= 0:
 			depth = 0xffffffff
 		(v, t, vn) = self.examine_mem_value(value)
-		while vn is not None:
+		if not vn:
+			result += [(v, t, vn)]
+
+		while vn:
 			if len(result) > depth:
 				_v, _t, _vn = result[-1]
 				result[-1] = (_v, _t, "--> ...")
 				break
 
 			result += [(v, t, vn)]
+
 			if v == vn or to_int(v) == to_int(vn): # point to self
 				break
 			if to_int(vn) is None:
@@ -846,6 +850,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				result[-1] = (v,t,vn+"(head)")
 				break
 			(v, t, vn) = self.examine_mem_value(to_int(vn))
+
 
 		return result
 
@@ -858,7 +863,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			- value: value to examine (Int)
 
 		Returns:
-			- tuple of (value(Int), type(String), next_value(Int))
+			- tuple of (value(Int), type(String), next_value(String))
 		"""
 		def examine_data(value, bits=32):
 			out = pykd.dbgCommand("d%s %s" % ("q" if bits == 64 else "d", to_hex(value)))
@@ -872,7 +877,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 					return str
 			return out
 		if value is None:
-			return ""
+			return [0, '', '']
 
 		if not self.is_address(value): # a value
 			result = (to_hex(value), "value", "")
@@ -886,11 +891,11 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				result = (to_hex(value), "data", out)
 
 		elif self.is_executable(value): # code/rodata address
-			out = examine_data(value, bits)
 			(func,disasm) = self.get_disasm(value)
 			if func and disasm:
 				result = (to_hex(value), "code", "(%s : %s)" % (yellow(func),purple(disasm)))
 			else:
+				out = examine_data(value, bits)
 				result = (to_hex(value), "data", out)
 
 		else: # readonly data address
@@ -899,6 +904,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				result = (to_hex(value), "rodata", out)
 			else:
 				result = (to_hex(value), "rodata", "MemError")
+
 		return result
 
 	def telescope(self, address, count=10):
@@ -917,7 +923,6 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				if not pykd.dbgCommand("d%s %s" % ("q" if step == 8 else "d", hex(address + i*step))):
 					break
 			return
-
 		result = []
 		for i in range(count):
 			value = address + i*step
@@ -925,8 +930,10 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				result += [self.examine_mem_reference(value)]
 			else:
 				result += [None]
+
 		idx = 0
 		text = ""
+
 		for chain in result:
 			text += "%04d| " % (idx)
 			text += format_reference_chain(chain)
