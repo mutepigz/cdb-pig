@@ -719,25 +719,25 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		if address is None:
 			return None	
 		try:
-			vmitem = pykd.dbgCommand("!address %s" % to_hex(address))
+			vmitem = pykd.dbgCommand("!vprot %s" % to_hex(address))
 		except:
 			vmitem = ''
-		if not vmitem or "Base Address" not in vmitem or "End Address" not in vmitem or "Protect" not in vmitem:
+		if not vmitem or "BaseAddress" not in vmitem or "RegionSize" not in vmitem or "Protect" not in vmitem:
 			return None
 		vmitem = vmitem.splitlines()
 
 		for line in vmitem:
-			if line.startswith("Base Address"):
-				start = re.findall("[0-9a-f`]*", line)[0]
-			if line.startswith("End Address"):
-				end = re.findall("[0-9a-f`]*", line)[0]
+			if line.startswith("BaseAddress"):
+				start = to_int(re.findall("[0-9a-f`]*", line)[0])
+			if line.startswith("RegionSize"):
+				size = to_int(re.findall("[0-9a-f`]*", line)[0])
 			if line.startswith("Protect"):
 				perm = re.findall("PAGE_[_A-Z]*", line)
 				if perm and "GUARD" not in perm:
 					perm = self._get_perm(perm[0])
 				else:
 					perm = '---'
-		return (start, end, '', '', '', perm, '')
+		return (start, start+size, '', '', '', perm, '')
 
 	@memoized
 	def is_executable(self, address):
