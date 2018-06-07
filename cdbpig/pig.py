@@ -807,7 +807,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		"""
 		if not address:
 			return (None, None)
-		code = pykd.dbgCommand("u %s" % (to_hex(address)))
+		code = pykd.dbgCommand("u %s L1" % (to_hex(address)))
 		if code:
 			codeline = code.split("\n")
 			func = codeline[0].strip()
@@ -975,7 +975,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		"""
 		if not argc:
 			argc = 0
-			p = re.compile(".*mov.*\[esp(.*)\],")
+			p = re.compile("\s*mov.*\[esp(.*)\],")
 			matches = p.findall(code)
 			if matches:
 				l = len(matches)
@@ -1003,7 +1003,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		# just retrieve max 6 args
 		arg_order = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-		p = re.compile(":\s*([^ ]*)\s*(.*),")
+		p = re.compile("\s*([^ ]*)\s*(.*),")
 		matches = p.findall(code)
 		regs = [r for (_, r) in matches]
 		p = re.compile(("di|si|dx|cx|r8|r9"))
@@ -1058,7 +1058,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		if not prev_insts:
 			return []
 		for (addr, inst, offset, comment) in prev_insts[::-1]:
-			code = "0x%x:%s\n" % (addr, inst) + code
+			code = "%s\n" % (inst) + code
 
 		if "86" in arch:
 			args = self._get_function_args_32(code, argc)
@@ -1099,53 +1099,21 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		Returns:
 			- list of tuple (address(Int), code(String), func_offset(String), comment(String))
 		"""
-		def split_code(code):
-			result = []
-			lines = code.splitlines()
-			if len(lines)>1:
-				self.prev_addr = to_int(lines[1].split(" ", 1)[0])
-			for idx,line in enumerate(lines) :
-				addr = line.split(" ", 1)[0]
-				if hex_addr in addr:
-					break
-			for line in lines[idx-count:idx]:
-				addr = line.split(" ", 1)[0]
-				addr = to_int(addr)
-				(func, code) = self.get_disasm(addr)
-				if not func or not code:
-					continue 
-				result += [(addr, code, func,'')]
-			return result
+		code = pykd.dbgCommand("ub %s L%s" % (to_hex(address), to_hex(count)))
 
-		backward = 16*count
-		hex_addr = "%x" % address
-		if len(hex_addr) > 8:
-			hex_addr = "%s`%s" % (hex_addr[:-8], hex_addr[-8:])
-		if self.prev_addr:
-			code = pykd.dbgCommand("u %s L%d" % (to_hex(self.prev_addr), (count<<1)+1))
-			if code and '???' not in code and hex_addr in code:
-				return split_code(code)
+		if not code: 
+			return []
 
-		while True:
-			code = pykd.dbgCommand("u %s L%d" % (to_hex(address-backward), (count<<1)+1))
-			if not code:
-				return []
-			last_line = code.splitlines()[-1]
-			last_addr = to_int(last_line.split(" ", 1)[0])
-			if last_addr < address:
-				backward -= (address-last_addr)
-			else:
-				break
-		i = backward
-		while i-backward<16:
-			if not self.is_address(address-i):
-				continue
-			code = pykd.dbgCommand("u %s L%d" % (to_hex(address-i), (count<<1)+1))
-
-			if code and '???' not in code and hex_addr in code:
-				return split_code(code)
-			i += 1
-		return []
+		result = []
+		lines = code.splitlines()
+		for line in lines:
+			addr = line.split(" ", 1)[0]
+			addr = to_int(addr)
+			(func, code) = self.get_disasm(addr)
+			if not func or not code:
+				continue 
+			result += [(addr, code, func,'')]
+		return result
 
 	def disassemble_around(self, address, count=14, jump=0, prev=1):
 		"""
@@ -1175,14 +1143,14 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			prev_code = []
 
 		now_code = []
-		code = pykd.dbgCommand("u %s L%d" % (to_hex(pc), count//2+1))
+		code = pykd.dbgCommand("u %s L%s" % (to_hex(pc), to_hex(count//2+1)))
 		hex_addr = "%x" % pc
 		if len(hex_addr) > 8:
 			hex_addr = "%s`%s" % (hex_addr[:-8], hex_addr[-8:])
 
 		if code and hex_addr in code:
-			lines = code.splitlines()[1:count//2+2]
-			if "???" not in " ".join(lines):
+			lines = code.splitlines()
+			if "???" not in code:
 				for line in lines:
 					addr = line.split(" ", 1)[0]
 					comment = ""
