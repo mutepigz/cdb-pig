@@ -214,6 +214,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 	def __init__(self, *args, **kwargs):
 		self.listeners = []
 		self.host = pykd
+		self.prev_addr = 0
 
 	def version(self):
 		"""
@@ -723,21 +724,26 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		except:
 			vmitem = ''
 		if not vmitem or "BaseAddress" not in vmitem or "RegionSize" not in vmitem or "Protect" not in vmitem:
-			return None
+			vmitem = pykd.dbgCommand("!address %s" % to_hex(address))
+			if not vmitem or "Base Address" not in vmitem or "Region Size" not in vmitem or "Protect" not in vmitem:
+				return None
+		perm = ''
 		vmitem = vmitem.splitlines()
-
 		for line in vmitem:
-			if line.startswith("BaseAddress"):
+			if line.startswith("BaseAddress") or line.startswith("Base Address"):
 				start = to_int(re.findall("[0-9a-f`]*", line)[0])
-			if line.startswith("RegionSize"):
+			if line.startswith("RegionSize") or line.startswith("Region Size"):
 				size = to_int(re.findall("[0-9a-f`]*", line)[0])
+				end = start + size
 			if line.startswith("Protect"):
 				perm = re.findall("PAGE_[_A-Z]*", line)
 				if perm and "GUARD" not in perm:
 					perm = self._get_perm(perm[0])
 				else:
 					perm = '---'
-		return (start, start+size, '', '', '', perm, '')
+		if not perm:
+			perm = '---'
+		return (start, end, '', '', '', perm, '')
 
 	@memoized
 	def is_executable(self, address):
@@ -1094,12 +1100,33 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		Returns:
 			- list of tuple (address(Int), code(String), func_offset(String), comment(String))
 		"""
+		def split_code(code):
+			result = []
+			lines = code.splitlines()
+			if len(lines)>1:
+				self.prev_addr = to_int(lines[1].split(" ", 1)[0])
+			for idx,line in enumerate(lines) :
+				addr = line.split(" ", 1)[0]
+				if hex_addr in addr:
+					break
+			for line in lines[idx-count:idx]:
+				addr = line.split(" ", 1)[0]
+				addr = to_int(addr)
+				(func, code) = self.get_disasm(addr)
+				if not func or not code:
+					continue 
+				result += [(addr, code, func,'')]
+			return result
 
-		result = []
 		backward = 16*count
 		hex_addr = "%x" % address
 		if len(hex_addr) > 8:
 			hex_addr = "%s`%s" % (hex_addr[:-8], hex_addr[-8:])
+		if self.prev_addr:
+			code = pykd.dbgCommand("u %s L%d" % (to_hex(self.prev_addr), (count<<1)+1))
+			if code and '???' not in code and hex_addr in code:
+				return split_code(code)
+
 		while True:
 			code = pykd.dbgCommand("u %s L%d" % (to_hex(address-backward), (count<<1)+1))
 			if not code:
@@ -1117,19 +1144,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			code = pykd.dbgCommand("u %s L%d" % (to_hex(address-i), (count<<1)+1))
 
 			if code and '???' not in code and hex_addr in code:
-				lines = code.splitlines()
-				for idx,line in enumerate(lines) :
-					addr = line.split(" ", 1)[0]
-					if hex_addr in addr:
-						break
-				for line in lines[idx-count:idx]:
-					addr = line.split(" ", 1)[0]
-					addr = to_int(addr)
-					(func, code) = self.get_disasm(addr)
-					if not func or not code:
-						continue 
-					result += [(addr, code, func,'')]
-				return result
+				return split_code(code)
 			i += 1
 		return []
 
