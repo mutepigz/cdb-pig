@@ -734,7 +734,6 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				start = to_int(re.findall("[0-9a-f`]*", line)[0])
 			if line.startswith("RegionSize") or line.startswith("Region Size"):
 				size = to_int(re.findall("[0-9a-f`]*", line)[0])
-				end = start + size
 			if line.startswith("Protect"):
 				perm = re.findall("PAGE_[_A-Z]*", line)
 				if perm and "GUARD" not in perm:
@@ -743,7 +742,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 					perm = '---'
 		if not perm:
 			perm = '---'
-		return (start, end, '', '', '', perm, '')
+		return (start, size, '', '', '', perm, '')
 
 	@memoized
 	def is_executable(self, address):
