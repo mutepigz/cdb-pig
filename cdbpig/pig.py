@@ -214,7 +214,6 @@ class WinDbgAdaptor(DebuggerAdaptor):
 	def __init__(self, *args, **kwargs):
 		self.listeners = []
 		self.host = pykd
-		self.prev_addr = 0
 
 	def version(self):
 		"""
@@ -736,7 +735,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				size = to_int(re.findall("[0-9a-f`]*", line)[0])
 			if line.startswith("Protect"):
 				perm = re.findall("PAGE_[_A-Z]*", line)
-				if perm and "GUARD" not in perm:
+				if perm and "GUARD" not in line:
 					perm = self._get_perm(perm[0])
 				else:
 					perm = '---'
@@ -875,7 +874,8 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			if out:
 				out = out.split("  ",1)[1].split(" ",1)[0].strip()
 			step = int(bits//8)
-			if is_printable(int2hexstr(to_int(out), step)):
+
+			if '????' not in out and is_printable(int2hexstr(to_int(out), step)):
 				str = pykd.dbgCommand("da %s"%to_hex(value))
 				if str:
 					str = str.split("  ",1)[1].strip()
@@ -1577,11 +1577,12 @@ class pigcmd():
 			- address(hex)
 			- count(int)
 		"""
-		try:
-			(addr, count) = args
-		except:
+		(addr, count) = self._unpack(args, 2)
+		if not addr:
 			return self._error_args()
-		
+		if not count:
+			count =10
+
 		debugger = WinDbgAdaptor(*args)
 		debugger.telescope(to_int(addr), int(count))
 
