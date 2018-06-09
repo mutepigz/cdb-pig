@@ -199,6 +199,8 @@ def is_printable(text, printables=""):
 	"""
 	if six.PY3 and isinstance(text, six.string_types):
 		text = six.b(text)
+	if len(text)<=0:
+		return False
 	return set(text) - set(six.b(string.printable) + six.b(printables)) == set()
 
 def is_math_exp(str):
@@ -308,6 +310,8 @@ def int2hexstr(num, intsize=4):
 			result = struct.pack("<l", num)
 		else:
 			result = struct.pack("<L", num)
+	if '\x00' in result:
+		result = result[:result.find('\x00')]
 	return result
 
 def list2hexstr(intlist, intsize=4):
