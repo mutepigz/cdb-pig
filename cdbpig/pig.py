@@ -1476,10 +1476,15 @@ class pigcmd():
 		"""
 		Get the help of command.
 		"""
-		for cmd in self.commands:
-			if cmd not in ["run", "help"]:
-				wprint(cmd.ljust(10), "lightred")
-				print(getattr(self, cmd).__doc__.strip().splitlines()[0])
+		(_,_,command) = self._unpack(args, 3)
+		print(command)
+		if command:
+			print(getattr(self, command).__doc__)
+		else:
+			for cmd in self.commands:
+				if cmd not in ["run"]:
+					wprint(cmd.ljust(10), "lightred")
+					print(getattr(self, cmd).__doc__.strip().splitlines()[0])
 
 	def test(self, *args):
 		"""
@@ -1637,42 +1642,44 @@ class pigcmd():
 			content = self._get_init()
 			for idx,line in enumerate(content):
 				if line.startswith('#'):
-					print("%d   %s [disable]"%(idx, line.strip()[1:]))
+					wprint("%d   [d]%s"%(idx, line.strip()[1:]), "lightred")
 				else:
-					print("%d   %s"%(idx, line.strip()))
+					wprint("%d   [e]%s"%(idx, line.strip()), "green")
+				print("")
 		elif opt == 'a' and arg:
 			f = self._open_init('a+')
-			last = f.readlines()[-1]
-			if not last.endswith("\n"):
-				f.write("\n")
+			try:
+				last = f.readlines()[-1]
+				if not last.endswith("\n"):
+					f.write("\n")
+			except:
+				pass
 			f.write(arg + '\n')
 			f.close()
 		elif opt in ['e','d','c'] and arg:
-			if opt=='c' and arg=='*':
-				f = self._open_init('w')
-			else:
+			content = self._get_init()
+			f = self._open_init('w')
+			if arg!='*':
 				try:
 					linenumber = int(arg)
 				except:
 					return self._error_args()
 
-				content = self._get_init()
-				f = self._open_init('w')
-				result = ""
-				for idx,line in enumerate(content):
-					if idx == linenumber:
-						if opt == 'e' and line.startswith('#'):
-							result += line[1:]
-						elif opt == 'd' and not line.startswith('#'):
-							result += '#'+line
-						elif opt == 'c':
-							continue
-						else:
-							result += line
+			result = ""
+			for idx,line in enumerate(content):
+				if arg=='*' or idx == linenumber:
+					if opt == 'e' and line.startswith('#'):
+						result += line[1:]
+					elif opt == 'd' and not line.startswith('#'):
+						result += '#'+line
+					elif opt == 'c':
+						continue
 					else:
 						result += line
-				f.write(result)
-				f.close()
+				else:
+					result += line
+			f.write(result)
+			f.close()
 
 
 
