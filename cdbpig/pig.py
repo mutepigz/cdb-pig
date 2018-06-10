@@ -1606,6 +1606,76 @@ class pigcmd():
 		"""
 		print("!py --global %s"%FILEPATH)
 
+	def _open_init(self, type='r'):
+		init_file = os.path.dirname(FILEPATH) + "\cdbinit"
+		try:
+			cdbinit = open(init_file, type)
+			return cdbinit
+		except:
+			error_msg("CDBINIT is not access!")
+			return None
+
+	def _get_init(self):
+		f = self._open_init()
+		content = f.readlines()
+		f.close()
+		ret = []
+		for line in content:
+			if line.strip():
+				ret.append(line)
+		return ret
+
+	def cdbinit(self, *args):
+		"""
+		add/edit/delete command in cdbinit.
+		Args:
+			- option(char): l(list), a(add), e(enable), d(disable), c(delete) 
+			- command(string)/linenumber(int): add command/enable or disable or delete command in the number of line
+		"""
+		(opt, arg) = self._unpack(args, 2)
+		if not opt or opt=='l':
+			content = self._get_init()
+			for idx,line in enumerate(content):
+				if line.startswith('#'):
+					print("%d   %s [disable]"%(idx, line.strip()[1:]))
+				else:
+					print("%d   %s"%(idx, line.strip()))
+		elif opt == 'a' and arg:
+			f = self._open_init('a+')
+			last = f.readlines()[-1]
+			if not last.endswith("\n"):
+				f.write("\n")
+			f.write(arg + '\n')
+			f.close()
+		elif opt in ['e','d','c'] and arg:
+			if opt=='c' and arg=='*':
+				f = self._open_init('w')
+			else:
+				try:
+					linenumber = int(arg)
+				except:
+					return self._error_args()
+
+				content = self._get_init()
+				f = self._open_init('w')
+				result = ""
+				for idx,line in enumerate(content):
+					if idx == linenumber:
+						if opt == 'e' and line.startswith('#'):
+							result += line[1:]
+						elif opt == 'd' and not line.startswith('#'):
+							result += '#'+line
+						elif opt == 'c':
+							continue
+						else:
+							result += line
+					else:
+						result += line
+				f.write(result)
+				f.close()
+
+
+
 if __name__ == '__main__':
 	pig = Pig()
 	if len(sys.argv)>1:
