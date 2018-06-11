@@ -11,7 +11,7 @@ import string
 import random
 from time import time
 
-VERSION = "0.1"
+VERSION = "0.2"
 FILEPATH = os.path.abspath(sys.argv[0])
 while os.path.islink(FILEPATH):
 	FILEPATH = os.readlink(FILEPATH)
@@ -1468,10 +1468,10 @@ class pigcmd():
 
 	def run(self):
 		if self.func in self.commands:
-			#try:
-			getattr(self, self.func)(*self.args) 
-			#except:
-			#	self._error_args()
+			try:
+				getattr(self, self.func)(*self.args) 
+			except:
+				self._error_args()
 		else:
 			error_msg("pigcmd error")
 
