@@ -19,7 +19,7 @@ import six
 from six import StringIO
 from six.moves import range
 from six.moves import input
-from color import cprint,debug
+from color import cprint,debug,wprint
 from time import time
 
 class memoized(object):
@@ -708,6 +708,10 @@ def string_repr(text, show_quotes=True):
 
 def error_msg(text):
 	wprint("[ERROR] %s" % text, "lightred")
+	print("")
+
+def success_msg(text):
+	wprint("[SUCCESS] %s" % text, "green")
 	print("")
 
 def pager(text, pagesize=12):
