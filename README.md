@@ -12,19 +12,14 @@ Thanks to project [peda](https://github.com/longld/peda).actually,CDB-PIG is ped
 * use `cdbinit` to run command in the start of cdb
 * you can customize your command in `pig.py`,please comply with the standard.Here is the demo code:
 ```
-	def test(self, *args):
+	def test(self, tname1="RedBoy", tname2="KeGua"):
 		"""
 		Test for command and args.
 		Args:
-			- tname1: test name 1 (string)
-			- tname2: test name 2 (string)
+			- tname1(string): test name 1 
+			- tname2(string): test name 2
 		"""
-		try:
-			(tname1, tname2) = args
-		except:
-			return self._error_args()
-
-		wprint("Mutepig say hello to  %s and %s!" % (tname1, tname2), "lightred")
+		wprint("Mutepig say hello to %s and %s!" % (tname1, tname2), "lightred")
 		print("")
 ```
 * you can see memory every step, and when changed it will be highlight.
