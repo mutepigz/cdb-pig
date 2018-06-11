@@ -294,11 +294,15 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		watch_command = get_alias("watch_command")
 		if watch_command:
 			wprint("[%s]" % "memory".center(150, "-"),"lightblue")
+			print("")
 			if 'last_watch' not in dir(self):
 				self.last_watch = ''
 			(dc, addr, num) = watch_command.strip().split()
+			if dc not in ['db','dd','dq','dp','dw']:
+				error_msg("%s is not supported!"%dc)
+				return []
 			now_watch = self.dumpmem(to_int(addr), int(num), dc)
-			self.watch_show(to_int(addr), now_watch, self.last_watch)
+			self.watch_show(to_int(addr), now_watch, self.last_watch, dc[1])
 			self.last_watch = now_watch
 
 	@validate_busy
@@ -361,18 +365,21 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		return vals
 
-	def watch_show(self, base_addr, now, last='', count=0x8):
+	def watch_show(self, base_addr, now, last='', c='', count=0x8):
 		line = 0
 		n = 0
-		step = self._target()['addr_size']
+		if not c or c =='p':
+			step = self._target()['addr_size']<<1
+		else: 
+			step = 2<<['b','w','d','q'].index(c)
 		for idx,n in enumerate(now):
 			if idx%count == 0 :
 				print("")
 				wprint(to_hex(base_addr+line*count)+"  ","cyan")
 			if idx<len(last) and last[idx]!=n:
-				wprint(just_hex(n, step<<1), "lightred")
+				wprint(just_hex(n, step), "lightred")
 			else:
-				wprint(just_hex(n, step<<1))
+				wprint(just_hex(n, step))
 			wprint(" ")
 			line+=1
 		print("")
@@ -957,16 +964,18 @@ class WinDbgAdaptor(DebuggerAdaptor):
 	def dumpmem(self, start, count=0, dc=''):
 		result = []
 		step = self._target()['addr_size']
+
 		if not dc:
 			dc = "d%s" % ("q" if step == 8 else "d")
 		if count is not None:
-			ret = pykd.dbgCommand("%s %s" % (dc, to_hex(start)))
+			ret = pykd.dbgCommand("%s %s L%d" % (dc, to_hex(start), count))
 			if not ret:
 				error_msg("dump memory failed")
 			else:
 				lines = ret.strip().splitlines()
 				for line in lines:
-					for mem in line.split()[1:]:
+					line = line.split("  ")[1].replace("-"," ")
+					for mem in line.split():
 						result.append(to_int(mem))
 
 		if  result:
@@ -1135,11 +1144,11 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		"""
 		count = min(count, 256)
 		pc = address
-		if pc is None:
-			return None
 
 		# check if address is reachable
-		if not self.is_address(pc) or not pykd.dbgCommand("u %s" % (to_hex(pc))):
+
+		if pc is None or not self.is_address(pc) or not self.is_executable(pc):
+			error_msg("%x not access or executable!"%address)
 			return None
 
 		if prev:
@@ -1466,12 +1475,26 @@ class pigcmd():
 	def _error_args(self):
 		print(getattr(self, self.func).__doc__)
 
+	def _get_aim(self, aim):
+		try:
+			ret = to_int(aim)
+		except:
+			ret = 0
+		if not ret:
+			try:
+				ret = pykd.dbgCommand("r %s"%aim).split('=')[1].strip()
+				if ret:
+					ret = to_int(ret)
+			except:
+				ret = 0
+		return ret
+
 	def run(self):
 		if self.func in self.commands:
-			try:
-				getattr(self, self.func)(*self.args) 
-			except:
-				self._error_args()
+			#try:
+			getattr(self, self.func)(*self.args) 
+			#except:
+			#	self._error_args()
 		else:
 			error_msg("pigcmd error")
 
@@ -1497,25 +1520,29 @@ class pigcmd():
 		wprint("Mutepig say hello to %s and %s!" % (tname1, tname2), "lightred")
 		print("")
 
-	def watch(self, dc, addr='', num=16):
+	def watch(self, dc, aim='', num=16):
 		"""
 		Run command every step.
 		Args:
-			- display_command(string): eg. dd,dw .   or you can disable it by input 'clear'
-			- addr (hex): the address to be watch.
+			- display_command(string): eg. dd,dw . Or you can disable it by inputing 'clear'
+			- address(hex)/register(string): the address to be watch.
 			- num (int) : the number of line to be watch. (optional)
 		"""
+		aim = self._get_aim(aim)
 		if dc=='clear':
 			pykd.dbgCommand("ad watch_command")
 		else:
-			set_alias("watch_command", "%s %s %s"%(dc, addr, num))
+			if re.match("d[a-z]",dc):
+				set_alias("watch_command", "%s %s %s"%(dc, to_hex(aim), num))
+			else:
+				return self._error_args()
 
-	def ct(self, type='', addr='', count=10):
+	def ct(self, type='', aim='', count=10):
 		"""
 		Run context().
 		Args:
 			- context type(char): r, d, s
-			- address(hex): if you choose disassemble, you can input address where you want to see. (optional)
+			- address(hex)/register(string): if you choose disassemble, you can input place where you want to see. (optional)
 			- count(int): the number of instructions to disassemble. (optional)
 		"""
 		debugger = WinDbgAdaptor()
@@ -1527,19 +1554,13 @@ class pigcmd():
 			debugger.context_stack()
 		elif type == 'd':
 			try:
-				if not addr:
+				if not aim:
 					debugger.context_code()
-				elif not count:
-					addr = to_int(addr)
-					text = debugger.disassemble_around(addr)
-					cprint(format_disasm_code(text, addr))
 				else:
-					addr = to_int(addr)
-					count = int(count)
-					text = debugger.disassemble_around(addr, count)
-					cprint(format_disasm_code(text, addr))
-			except Exception as e:
-				print(e)
+					aim = self._get_aim(aim)
+					text = debugger.disassemble_around(aim, int(count))
+					cprint(format_disasm_code(text, aim))
+			except:
 				self._error_args()
 		else:
 			self._error_args()
@@ -1568,15 +1589,16 @@ class pigcmd():
 				wprint(lines[idx]+"\n", "lightred")
 				print('\n'.join(lines[idx+1:idx+b+1]))
 
-	def memory(self, addr, count=10):
+	def memory(self, aim, count=10):
 		"""
 		Get the data chain in memory.
 		Args:
-			- address(hex)
+			- address(hex)/register(string)
 			- count(int)
 		"""
+		aim = self._get_aim(aim)
 		debugger = WinDbgAdaptor()
-		debugger.telescope(to_int(addr), int(count))
+		debugger.telescope(aim, int(count))
 
 	def dis(self, addr1, addr2):
 		"""
@@ -1678,6 +1700,67 @@ class pigcmd():
 			except:
 				error_msg("UPDATE %s" % i)
 
+	def searchmem(self, start, end, search, is_re=False):
+		"""  
+		Search for all instances of a pattern in memory from start to end
+			 
+		Args:
+			- start(int): start address 
+			- end(int): end address 
+			- search(string): hexstring(start with '0x') or string or python regex pattern 
+			- re(int): use regex pattern or not
+		"""
+			 
+		result = [] 
+		start = to_int(start)
+		end = to_int(end)
+		if end < start:
+			(start, end) = (end, start)
+		debugger = WinDbgAdaptor()
+		mem = debugger.dumpmem(start, end-start, 'db')
+		mem_str = ''.join([chr(i) for i in mem])
+
+		if not mem: 
+			return result
+			 
+		if isinstance(search, six.string_types) and search.startswith("0x"):
+			# hex number
+			search = search[2:]
+			if len(search) %2 != 0:
+				search = "0" + search
+			search = search.decode('hex')
+
+		# Convert search to bytes if is not already
+		if not isinstance(search, bytes):
+			search = search.encode('utf-8')
+
+		if not is_re:
+			search = re.escape(search)
+		try: 
+			p = re.compile(search)
+		except:
+			search = re.escape(search)
+		p = re.compile(search)
+
+		found = list(p.finditer(mem_str))
+		for m in found:
+			index = 1
+			if m.start() == m.end() and m.lastindex:
+				index = m.lastindex+1
+			for i in range(0,index):
+				if m.start(i) != m.end(i):
+					result += [(start + m.start(i), ''.join(["%02x"%i for i in mem[m.start(i):m.end(i)]]))]
+		if not result:
+			error_msg("Nothing Found!")
+			return
+		for i in result:
+			(addr, hex) = i
+			wprint("%s "%to_hex(addr), "cyan")
+			str = int2hexstr(to_int(hex))[::-1]
+			if is_printable(str):
+				print("%s(%s)" % (hex, str))
+			else:
+				print(hex)
 
 
 if __name__ == '__main__':
