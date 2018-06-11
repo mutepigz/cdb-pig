@@ -721,11 +721,16 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		try:
 			vmitem = pykd.dbgCommand("!vprot %s" % to_hex(address))
 		except:
-			vmitem = ''
+			return (0, 0, '', '', '', '---', '')
+
 		if not vmitem or "BaseAddress" not in vmitem or "RegionSize" not in vmitem or "Protect" not in vmitem:
+			return (0, 0, '', '', '', '---', '')
+			'''
 			vmitem = pykd.dbgCommand("!address %s" % to_hex(address))
 			if not vmitem or "Base Address" not in vmitem or "Region Size" not in vmitem or "Protect" not in vmitem:
 				return None
+			'''
+
 		perm = ''
 		vmitem = vmitem.splitlines()
 		for line in vmitem:
@@ -1446,38 +1451,34 @@ class Pig():
 
 class pigcmd():
 	def __init__(self):
-		self.commands = [c for c in dir(self) if callable(getattr(self, c)) and not c.startswith("_")]
+		self.commands = [c for c in dir(self) if callable(getattr(self, c)) and not c.startswith("_")] 
 		if len(sys.argv)>1:
 			self.func = sys.argv[1]
 		if len(sys.argv)>2:
 			self.args = sys.argv[2:]
 		else:
 			self.args = []
+		if "!py" in self.args:
+			self.args.remove("!py")
+		if FILEPATH in self.args:
+			self.args.remove(FILEPATH)
 
 	def _error_args(self):
 		print(getattr(self, self.func).__doc__)
 
-	def _unpack(self, args, count=0):
-		if count < len(args):
-			return list(args)
-		args = list(args) + ['' for i in xrange(count-len(args))]
-		return args
-
 	def run(self):
 		if self.func in self.commands:
-			try:
-				getattr(self, self.func)(*self.args)
-			except:
-				self._error_args()
+			#try:
+			getattr(self, self.func)(*self.args) 
+			#except:
+			#	self._error_args()
 		else:
 			error_msg("pigcmd error")
 
-	def help(self, *args):
+	def help(self, command=None):
 		"""
 		Get the help of command.
 		"""
-		(_,_,command) = self._unpack(args, 3)
-		print(command)
 		if command:
 			print(getattr(self, command).__doc__)
 		else:
@@ -1486,37 +1487,30 @@ class pigcmd():
 					wprint(cmd.ljust(10), "lightred")
 					print(getattr(self, cmd).__doc__.strip().splitlines()[0])
 
-	def test(self, *args):
+	def test(self, tname1="RedBoy", tname2="KeGua"):
 		"""
 		Test for command and args.
 		Args:
 			- tname1(string): test name 1 
 			- tname2(string): test name 2
 		"""
-		try:
-			(tname1, tname2) = args
-		except:
-			return self._error_args()
-
 		wprint("Mutepig say hello to %s and %s!" % (tname1, tname2), "lightred")
 		print("")
 
-	def watch(self, *args):
+	def watch(self, dc, addr='', num=16):
 		"""
 		Run command every step.
 		Args:
-			- display_command(string): eg. dd,dw 
-			- addr (hex): the address to be watch
-			- num (int) : the number of line to be watch
+			- display_command(string): eg. dd,dw .   or you can disable it by input 'clear'
+			- addr (hex): the address to be watch.
+			- num (int) : the number of line to be watch. (optional)
 		"""
-		try:
-			(dc, addr, num) = args
-		except:
-			return self._error_args()
+		if dc=='clear':
+			pykd.dbgCommand("ad watch_command")
+		else:
+			set_alias("watch_command", "%s %s %s"%(dc, addr, num))
 
-		set_alias("watch_command", "%s %s %s"%(dc, addr, num))
-
-	def ct(self, *args):
+	def ct(self, type='', addr='', count=10):
 		"""
 		Run context().
 		Args:
@@ -1524,9 +1518,8 @@ class pigcmd():
 			- address(hex): if you choose disassemble, you can input address where you want to see. (optional)
 			- count(int): the number of instructions to disassemble. (optional)
 		"""
-		debugger = WinDbgAdaptor(*args)
-		(type, addr, count) = self._unpack(args, 3)
-		if type == '':
+		debugger = WinDbgAdaptor()
+		if not type:
 			debugger.context()
 		elif type == 'r':
 			debugger.context_register()
@@ -1551,7 +1544,7 @@ class pigcmd():
 		else:
 			self._error_args()
 
-	def grep(self, *args):
+	def grep(self, command, regex_string, a='', b=''):
 		"""
 		Grep regex_string in the result of command
 		Args:
@@ -1560,9 +1553,6 @@ class pigcmd():
 			- after_context(int) (optional)
 			- before_context(int) (optional)
 		"""
-		(command, regex_string, a, b) = self._unpack(args, 4)
-		if not command or not regex_string:
-			return self._error_args()
 		try:
 			a = to_int(a)
 			b = to_int(b)
@@ -1573,39 +1563,31 @@ class pigcmd():
 		lines = result.splitlines()
 		for idx,line in enumerate(lines):
 			if regex_string in line:
-				print('\n'.join(lines[idx-a:idx+b+1]) + '\n')
+				print("="*50)
+				print('\n'.join(lines[idx-a:idx]))
+				wprint(lines[idx]+"\n", "lightred")
+				print('\n'.join(lines[idx+1:idx+b+1]))
 
-	def memory(self, *args):
+	def memory(self, addr, count=10):
 		"""
 		Get the data chain in memory.
 		Args:
 			- address(hex)
 			- count(int)
 		"""
-		(addr, count) = self._unpack(args, 2)
-		if not addr:
-			return self._error_args()
-		if not count:
-			count =10
-
-		debugger = WinDbgAdaptor(*args)
+		debugger = WinDbgAdaptor()
 		debugger.telescope(to_int(addr), int(count))
 
-	def dis(self, *args):
+	def dis(self, addr1, addr2):
 		"""
 		Get the distance of addr1 and addr2.
 		Args:
 			- address1(hex)
 			- address2(hex)
 		"""
-		try:
-			(addr1, addr2) = args
-		except:
-			return self._error_args()
-		
 		print("%s - %s = 0x%x"%(addr2, addr1, to_int(addr2)-to_int(addr1)))
 
-	def reload(self, *args):
+	def reload(self):
 		"""
 		Reload CDB-PIG.
 		"""
@@ -1630,14 +1612,13 @@ class pigcmd():
 				ret.append(line)
 		return ret
 
-	def cdbinit(self, *args):
+	def cdbinit(self, opt='', arg=''):
 		"""
 		add/edit/delete command in cdbinit.
 		Args:
 			- option(char): l(list), a(add), e(enable), d(disable), c(delete) 
 			- command(string)/linenumber(int): add command/enable or disable or delete command in the number of line
 		"""
-		(opt, arg) = self._unpack(args, 2)
 		if not opt or opt=='l':
 			content = self._get_init()
 			for idx,line in enumerate(content):
@@ -1680,6 +1661,24 @@ class pigcmd():
 					result += line
 			f.write(result)
 			f.close()
+
+	def update(self):
+		"""
+		Update cdb-pig from github.
+		"""
+		try:
+			import requests
+			git_url = "https://raw.githubusercontent.com/mutepigz/cdb-pig/master/cdbpig"
+			for i in ['/pig.py', '/lib/color.py', '/lib/utils.py']:
+				c = requests.get(git_url + i)
+				if c:
+					c = c.content
+					f = open(os.path.dirname(FILEPATH)+i.replace("/","\\"), 'w')
+					f.write(c)
+					f.cloes()
+					success_msg("UPDATE %s" % i)
+		except:
+			error_msg("you should install `requests` first!")
 
 
 
