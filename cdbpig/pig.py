@@ -1667,18 +1667,16 @@ class pigcmd():
 		Update cdb-pig from github.
 		"""
 		try:
-			import requests
-			git_url = "https://raw.githubusercontent.com/mutepigz/cdb-pig/master/cdbpig"
-			for i in ['/pig.py', '/lib/color.py', '/lib/utils.py']:
-				c = requests.get(git_url + i)
-				if c:
-					c = c.content
-					f = open(os.path.dirname(FILEPATH)+i.replace("/","\\"), 'w')
-					f.write(c)
-					f.cloes()
-					success_msg("UPDATE %s" % i)
+			import urllib
 		except:
-			error_msg("you should install `requests` first!")
+			error_msg("you should install `urllib` first!")
+		git_url = "https://raw.githubusercontent.com/mutepigz/cdb-pig/master/cdbpig"
+		for i in ['/pig.py', '/lib/color.py', '/lib/utils.py']:
+			try:
+				urllib.urlretrieve(git_url+i, os.path.dirname(FILEPATH)+i.replace("/","\\"))
+				success_msg("UPDATE %s" % i)
+			except:
+				error_msg("UPDATE %s" % i)
 
 
 
