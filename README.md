@@ -24,7 +24,7 @@ Thanks to project [peda](https://github.com/longld/peda).actually,CDB-PIG is ped
 ```
 * you can see memory every step, and when changed it will be highlight.
 ```
-watch dX address number
+watch d[b,d,q,p,w] address number
 ```
 * more command in `help`
 
