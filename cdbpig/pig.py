@@ -1491,10 +1491,10 @@ class pigcmd():
 
 	def run(self):
 		if self.func in self.commands:
-			#try:
-			getattr(self, self.func)(*self.args) 
-			#except:
-			#	self._error_args()
+			try:
+				getattr(self, self.func)(*self.args) 
+			except:
+				self._error_args()
 		else:
 			error_msg("pigcmd error")
 
@@ -1693,25 +1693,24 @@ class pigcmd():
 			except:
 				error_msg("UPDATE %s" % i)
 
-	def searchmem(self, start, end, search, is_re=False):
+	def search(self, aim, length, search, is_re=False):
 		"""  
 		Search for all instances of a pattern in memory from start to end
 			 
 		Args:
-			- start(int): start address 
-			- end(int): end address 
+			- address(hex)/register(string): start address 
+			- length(int): search length
 			- search(string): hexstring(start with '0x') or string or python regex pattern 
 			- re(int): use regex pattern or not
 		"""
 			 
 		result = [] 
-		start = to_int(start)
-		end = to_int(end)
-		if end < start:
-			(start, end) = (end, start)
+		start = self._get_aim(aim)
+		end = start + to_int(length)
 		debugger = WinDbgAdaptor()
 		mem = debugger.dumpmem(start, end-start, 'db')
 		mem_str = ''.join([chr(i) for i in mem])
+		print("Search from %x to %x" % (start, end))
 
 		if not mem: 
 			return result
@@ -1748,10 +1747,10 @@ class pigcmd():
 			return
 		for i in result:
 			(addr, hex) = i
-			wprint("%s "%to_hex(addr), "cyan")
+			wprint("  %s "%to_hex(addr), "cyan")
 			str = int2hexstr(to_int(hex))[::-1]
 			if is_printable(str):
-				print("%s(%s)" % (hex, str))
+				print("%s(\"%s\")" % (hex, str))
 			else:
 				print(hex)
 
