@@ -1505,9 +1505,11 @@ class pigcmd():
 		if command:
 			print(getattr(self, command).__doc__)
 		else:
+			print("Name".ljust(16)+"Description")
+			print(("-"*10).ljust(16)+"-"*10)
 			for cmd in self.commands:
 				if cmd not in ["run"]:
-					wprint(cmd.ljust(10), "lightred")
+					wprint(cmd.ljust(16), "lightred")
 					print(getattr(self, cmd).__doc__.strip().splitlines()[0])
 
 	def test(self, tname1="RedBoy", tname2="KeGua"):
@@ -1591,7 +1593,7 @@ class pigcmd():
 
 	def memory(self, aim, count=10):
 		"""
-		Get the data chain in memory.
+		Get data chain in memory.
 		Args:
 			- address(hex)/register(string)
 			- count(int)
@@ -1599,15 +1601,6 @@ class pigcmd():
 		aim = self._get_aim(aim)
 		debugger = WinDbgAdaptor()
 		debugger.telescope(aim, int(count))
-
-	def dis(self, addr1, addr2):
-		"""
-		Get the distance of addr1 and addr2.
-		Args:
-			- address1(hex)
-			- address2(hex)
-		"""
-		print("%s - %s = 0x%x"%(addr2, addr1, to_int(addr2)-to_int(addr1)))
 
 	def reload(self):
 		"""
