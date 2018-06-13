@@ -888,10 +888,15 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			step = int(bits//8)
 
 			if '????' not in out and is_printable(int2hexstr(to_int(out), step)):
-				str = pykd.dbgCommand("da %s"%to_hex(value))
-				if str:
-					str = str.split("  ",1)[1].strip()
-					return str
+				stra = pykd.dbgCommand("da %s"%to_hex(value)).splitlines()
+				if stra:
+					stra = stra[0].split("  ",2)[1].strip()
+				stru = pykd.dbgCommand("du %s"%to_hex(value)).splitlines()
+				if stru:
+					stru = stru[0].split("  ",2)[1].strip()
+				if len(stra)<len(stru):
+					stra = stru
+				return stra
 			return out
 		if value is None:
 			return [0, '', '']
@@ -968,7 +973,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		if not dc:
 			dc = "d%s" % ("q" if step == 8 else "d")
 		if count is not None:
-			ret = pykd.dbgCommand("%s %s L%d" % (dc, to_hex(start), count))
+			ret = pykd.dbgCommand("%s %s L%x" % (dc, to_hex(start), count))
 			if not ret:
 				error_msg("dump memory failed")
 			else:
@@ -1587,9 +1592,11 @@ class pigcmd():
 		for idx,line in enumerate(lines):
 			if regex_string in line:
 				print("="*50)
-				print('\n'.join(lines[idx-a:idx]))
+				if a:
+					print('\n'.join(lines[idx-a:idx]))
 				wprint(lines[idx]+"\n", "lightred")
-				print('\n'.join(lines[idx+1:idx+b+1]))
+				if b:
+					print('\n'.join(lines[idx+1:idx+b+1]))
 
 	def memory(self, aim, count=10):
 		"""
@@ -1706,12 +1713,20 @@ class pigcmd():
 			 
 		result = [] 
 		start = self._get_aim(aim)
-		end = start + to_int(length)
+		length = to_int(length)
+		end = start + length
 		debugger = WinDbgAdaptor()
-		mem = debugger.dumpmem(start, end-start, 'db')
+		mem = []
+		for i in xrange(start, end, 0x10000):
+			if i > end: i = end
+			mem += debugger.dumpmem(i, min(0x10000, end-i), 'db')
 		mem_str = ''.join([chr(i) for i in mem])
 		print("Search from %x to %x" % (start, end))
 
+		# unicode search string
+		usearch = ''
+		# hex search string
+		hsearch = ''
 		if not mem: 
 			return result
 			 
@@ -1721,6 +1736,9 @@ class pigcmd():
 			if len(search) %2 != 0:
 				search = "0" + search
 			search = search.decode('hex')
+			hsearch = search[::-1]
+		elif not is_re:
+			usearch = ''.join([(i+'\x00') for i in search])
 
 		# Convert search to bytes if is not already
 		if not isinstance(search, bytes):
@@ -1732,6 +1750,10 @@ class pigcmd():
 			p = re.compile(search)
 		except:
 			search = re.escape(search)
+		if usearch:
+			search += "|" + usearch
+		if hsearch:
+			search += "|" + hsearch
 		p = re.compile(search)
 
 		found = list(p.finditer(mem_str))
@@ -1748,7 +1770,7 @@ class pigcmd():
 		for i in result:
 			(addr, hex) = i
 			wprint("  %s "%to_hex(addr), "cyan")
-			str = int2hexstr(to_int(hex))[::-1]
+			str = hex.decode("hex")
 			if is_printable(str):
 				print("%s(\"%s\")" % (hex, str))
 			else:
