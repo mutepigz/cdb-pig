@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 import pykd
 import os
 import sys
@@ -22,65 +19,19 @@ from logo import logos
 from color import cprint,wprint,debug
 from utils import *
 
-
-def validate_target(func, *args, **kwargs):
+class DebuggerCommand(pykd.eventHandler):
 	"""
-	A decorator that ensures that the specified target_id exists and
-	is valid.
-
-	Expects the target ID to be either the 'target_id' param in kwargs,
-	or the first positional parameter.
-
-	Raises a NoSuchTargetException if the target does not exist.
+	The `voltron` command in the debugger.
 	"""
-	def inner(self, *args, **kwargs):
-		# find the target param
-		target_id = None
-		if 'target_id' in kwargs and kwargs['target_id'] != None:
-			target_id = kwargs['target_id']
-		else:
-			target_id = 0
+	def __init__(self):
+		pykd.eventHandler.__init__(self)
+		self.adaptor = DebuggerAdaptor()
 
-		# if there was a target specified, check that it's valid
-		if not self.target_is_valid(target_id):
-			raise NoSuchTargetException()
-
-		# call the function
-		return func(self, *args, **kwargs)
-	return inner
-
-
-def validate_busy(func, *args, **kwargs):
-	"""
-	A decorator that raises an exception if the specified target is busy.
-
-	Expects the target ID to be either the 'target_id' param in kwargs,
-	or the first positional parameter.
-
-	Raises a TargetBusyException if the target does not exist.
-	"""
-	def inner(self, *args, **kwargs):
-		# find the target param
-		target_id = None
-		if 'target_id' in kwargs and kwargs['target_id'] != None:
-			target_id = kwargs['target_id']
-		else:
-			target_id = 0
-
-		# if there was a target specified, ensure it's not busy
-		if self.target_is_busy(target_id):
-			raise TargetBusyException()
-
-		# call the function
-		return func(self, *args, **kwargs)
-	return inner
+	def onExecutionStatusChange(self, status):
+		if status == pykd.executionStatus.Break: # step, trace, ...
+			self.adaptor.update_state()
 
 class DebuggerAdaptor(object):
-	"""
-	Base debugger adaptor class. Debugger adaptors implemented in plugins for
-	specific debuggers inherit from this.
-	"""
-
 	reg_names = {
 		"x86":	  {"pc": "eip", "sp": "esp"},
 		"x86_64":   {"pc": "rip", "sp": "rsp"},
@@ -89,92 +40,19 @@ class DebuggerAdaptor(object):
 	8 : ["al", "ah", "bl", "bh", "cl", "ch", "dl", "dh"],
 	16: ["ax", "bx", "cx", "dx"],
 	32: ["eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp", "eip"],
-	64: ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "rip",
-		 "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+	64: ["rax", "rbx", "rcx", "rdx", "rsi", "rdi","r8", "r9", "r10",
+		 "r11", "r12", "r13", "r14", "r15","rbp", "rsp", "rip",]
 	}
-	cs_archs = {}
 
 	def __init__(self, *args, **kwargs):
 		self.listeners = []
 		self.command = WinDbgCommand()
 
-	def target_exists(self, target_id=0):
-		"""
-		Returns True or False indicating whether or not the specified
-		target is present and valid.
-
-		`target_id` is a target ID (or None for the first target)
-		"""
-		try:
-			target = self._target(target_id=target_id)
-		except Exception as e:
-			return False
-		return target is not None
-
-	def target_is_valid(self, target_id=0):
-		"""
-		Returns True or False indicating whether or not the specified
-		target is present and valid.
-
-		`target_id` is a target ID (or None for the first target)
-		"""
-		try:
-			target = self._target(target_id=target_id)
-		except:
-			return False
-		return target['state'] != "invalid"
-
-	def target_is_busy(self, target_id=0):
-		"""
-		Returns True or False indicating whether or not the specified
-		target is busy.
-
-		`target_id` is a target ID (or None for the first target)
-		"""
-		try:
-			target = self._target(target_id=target_id)
-		except:
-			raise NoSuchTargetException()
-		return target['state'] == "running"
-
-	def add_listener(self, callback, state_changes=["stopped"]):
-		"""
-		Add a listener for state changes.
-		"""
-		self.listeners.append({"callback": callback, "state_changes": state_changes})
-
-	def remove_listener(self, callback):
-		"""
-		Remove a listener.
-		"""
-		listeners = filter(lambda x: x['callback'] == callback, self.listeners)
-		for l in listeners:
-			self.listeners.remove(l)
-
 	def update_state(self):
-		"""
-		Notify all the listeners (probably `wait` plugins) that the state
-		has changed.
-
-		This is called by the debugger's stop-hook.
-		
-		"""
 		self.context()
-		self.watch()
+		pykd.breakin()
+		#self.watch()
 
-	def register_command_plugin(self, name, cls):
-		pass
-
-	def capabilities(self):
-		"""
-		Return a list of the debugger's capabilities.
-
-		Thus far only the 'async' capability is supported. This indicates
-		that the debugger host can be queried from a background thread,
-		and that views can use non-blocking API requests without queueing
-		requests to be dispatched next time the debugger stops.
-		"""
-		return []
 
 	def pc(self, target_id=0, thread_id=None):
 		return self.program_counter(target_id, thread_id)
@@ -182,29 +60,6 @@ class DebuggerAdaptor(object):
 	def sp(self, target_id=0, thread_id=None):
 		return self.stack_pointer(target_id, thread_id)
 
-
-class DebuggerCommand (object):
-	"""
-	The `voltron` command in the debugger.
-	"""
-	def __init__(self, *args, **kwargs):
-		super(DebuggerCommand, self).__init__(*args, **kwargs)
-		self.adaptor = WinDbgAdaptor()
-		self.registered = False
-
-	def handle_command(self, command):
-		global log
-		if 'debug' in command:
-			if 'enable' in command:
-				print("Debug logging enabled")
-			elif 'disable' in command:
-				print("Debug logging disabled")
-		elif 'init' in command:
-			self.register_hooks()
-		elif 'stopped' in command or 'update' in command:
-			self.adaptor.update_state()
-
-class WinDbgAdaptor(DebuggerAdaptor):
 	sizes = {
 		'x86': 4,
 		'x86_64': 8,
@@ -214,19 +69,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 	def __init__(self, *args, **kwargs):
 		self.listeners = []
 		self.host = pykd
-
-	def version(self):
-		"""
-		Get the debugger's version.
-
-		Returns a string containing the debugger's version
-		(e.g. 'Microsoft (R) Windows Debugger Version whatever, pykd 0.3.0.38')
-		"""
-		try:
-			[windbg] = [line for line in pykd.dbgCommand('version').split('\n') if 'Microsoft (R) Windows Debugger Version' in line]
-		except:
-			windbg = 'WinDbg <unknown>'
-		return '{}, {}'.format(windbg, 'pykd {}'.format(pykd.version))
+		self.watch_command = ""
 
 	def _target(self, target_id=0):
 		"""
@@ -278,22 +121,20 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		"""
 		return [self._target()]
 
-	@validate_target
+
 	def state(self, target_id=0):
 		"""
 		Get the state of a given target.
 		"""
 		return self._state()
 
-	@validate_busy
-	@validate_target
 	def watch(self):
 		"""
 		Show the memory by watch_command.
 		"""
-		watch_command = get_alias("watch_command")
+		self.watch_command = get_alias("watch_command")
 		if watch_command:
-			wprint("[%s]" % "memory".center(150, "-"),"lightblue")
+			wprint("[%s]" % "memory".center(200, "-"),"lightblue")
 			print("")
 			if 'last_watch' not in dir(self):
 				self.last_watch = ''
@@ -305,8 +146,6 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			self.watch_show(to_int(addr), now_watch, self.last_watch, dc[1])
 			self.last_watch = now_watch
 
-	@validate_busy
-	@validate_target
 	def registers(self, target_id=0, thread_id=None, registers=[]):
 		"""
 		Get the register values for a given target/thread.
@@ -387,15 +226,10 @@ class WinDbgAdaptor(DebuggerAdaptor):
 	def get_reg(self, regname=''):
 		if not regname:
 			return self.registers()
-		
-		reg = pykd.dbgCommand("r %s"%regname)
-		if reg:
-			return to_int(reg.split('=')[1])
-		else:
-			return None
+		return pykd.reg(regname)
 
-	@validate_busy
-	@validate_target
+
+
 	def stack_pointer(self, target_id=0, thread_id=None):
 		"""
 		Get the value of the stack pointer register.
@@ -409,8 +243,8 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		return sp_name, sp
 
-	@validate_busy
-	@validate_target
+
+
 	def program_counter(self, target_id=0, thread_id=None):
 		"""
 		Get the value of the program counter register.
@@ -424,59 +258,8 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		return pc_name, pc
 
-	@validate_busy
-	@validate_target
-	def memory(self, address, length, target_id=0):
-		"""
-		Get the register values for .
 
-		`address` is the address at which to start reading
-		`length` is the number of bytes to read
-		"""
-		# read memory
-		memory = array.array('B', pykd.loadBytes(address, length)).tostring()
 
-		return memory
-
-	@validate_busy
-	@validate_target
-	def stack(self, length=10, target_id=0, thread_id=None):
-		"""
-		Get the register values for .
-
-		`length` is the number of bytes to read
-		`target_id` is a target ID (or None for the first target)
-		`thread_id` is a thread ID (or None for the selected thread)
-		"""
-		# get the stack pointer
-		sp_name, sp = self.stack_pointer(target_id=target_id, thread_id=thread_id)
-
-		# read memory
-		memory = self.memory(sp, length, target_id=target_id)
-
-		return memory
-
-	@validate_busy
-	@validate_target
-	def disassemble(self, target_id=0, address=None, count=12):
-		"""
-		Get a disassembly of the instructions at the given address.
-
-		`address` is the address at which to disassemble. If None, the
-		current program counter is used.
-		`count` is the number of instructions to disassemble.
-		"""
-		# make sure we have an address
-		if address is None:
-			pc_name, address = self.program_counter(target_id=target_id)
-
-		# disassemble
-		output = pykd.dbgCommand('u 0x{:x} l{}'.format(address, count))
-
-		return output
-
-	@validate_busy
-	@validate_target
 	def dereference(self, pointer, target_id=0):
 		"""
 		Recursively dereference a pointer for display
@@ -665,146 +448,30 @@ class WinDbgAdaptor(DebuggerAdaptor):
 	def get_byte_order(self):
 		return 'little'
 
-	def _get_perm(self, perm):
-		if perm == "PAGE_NOACCESS":
-			perm = "---"
-		elif perm == "PAGE_READONLY":
-			perm = "r--"
-		elif perm == "PAGE_WRITECOPY" or "PAGE_READWRITE" in perm:
-			perm = "rw-"
-		elif perm == "PAGE_EXECUTE_READ":
-			perm = "r-x"
-		elif perm == "PAGE_EXECUTE_READWRITE ":
-			perm = "rwx"
-		elif perm == "PAGE_EXECUTE ":
-			perm = "--x"
-		return perm
-
-	@memoized
-	def _get_vmmap(self):
-		try:
-			pykd.dbgCommand("!address").split("---\n")[1]
-			vmmap = pykd.dbgCommand("!address").split("---\n")[1]
-		except:
-			vmmap = ''
-		if not vmmap:
-			return [(0,0xffffffffffffffff,0xffffffffffffffff,0,0,"rwx","NONAME")]
-		result = []
-		pattern = re.compile("([0-9a-f`]*) *([0-9a-f`]*) *([0-9a-f`]*) *(MEM_[A-Z]*) *(MEM_[A-Z]*) *(PAGE_[_A-Z]*) *(.*?)\n")
-		matches = pattern.findall(vmmap)
-		if matches:
-			for (start, end, size, type, state, perm, mapname) in matches:
-				start = to_int(start.strip())
-				end = to_int(end.strip())
-				size = size.strip()
-				perm = perm.strip()
-				mapname = mapname.strip()
-				perm = self._get_perm(perm)
-
-				result += [(start, end, size, type, state, perm, mapname)]
-		return result
-
-	def get_vmmap(self):
-		try:
-			if self.vmmap:
-				return self.vmmap
-		except:
-			self.vmmap = self._get_vmmap()
-			return self.vmmap
-
-	@memoized
-	def get_vmrange(self, address):
-		"""
-		Get virtual memory mapping range of an address
-
-		Args:
-			- address: target address (Int)
-
-		Returns:
-			- tuple of virtual memory info (start, end, perm, mapname)
-		"""
-		if address is None:
-			return None	
-		try:
-			vmitem = pykd.dbgCommand("!vprot %s" % to_hex(address))
-		except:
-			return (0, 0, '', '', '', '---', '')
-
-		if not vmitem or "BaseAddress" not in vmitem or "RegionSize" not in vmitem or "Protect" not in vmitem:
-			return (0, 0, '', '', '', '---', '')
-			'''
-			vmitem = pykd.dbgCommand("!address %s" % to_hex(address))
-			if not vmitem or "Base Address" not in vmitem or "Region Size" not in vmitem or "Protect" not in vmitem:
-				return None
-			'''
-
-		perm = ''
-		vmitem = vmitem.splitlines()
-		for line in vmitem:
-			if line.startswith("BaseAddress") or line.startswith("Base Address"):
-				start = to_int(re.findall("[0-9a-f`]*", line)[0])
-			if line.startswith("RegionSize") or line.startswith("Region Size"):
-				size = to_int(re.findall("[0-9a-f`]*", line)[0])
-			if line.startswith("Protect"):
-				perm = re.findall("PAGE_[_A-Z]*", line)
-				if perm and "GUARD" not in line:
-					perm = self._get_perm(perm[0])
-				else:
-					perm = '---'
-		if not perm:
-			perm = '---'
-		return (start, size, '', '', '', perm, '')
-
 	@memoized
 	def is_executable(self, address):
-		"""
-		Check if an address is executable
-
-		Args:
-			- address: target address (Int)
-			- maps: only check in provided maps (List)
-
-		Returns:
-			- True if address belongs to an executable address range (Bool)
-		"""
-		vmrange = self.get_vmrange(address)
-		if vmrange and "x" in vmrange[5]:
+		if pykd.isKernelDebugging():
+			return False
+		if "Execute" in str(pykd.getVaProtect(address)):
 			return True
 		else:
 			return False
 
 	@memoized
 	def is_writable(self, address):
-		"""
-		Check if an address is writable
-
-		Args:
-			- address: target address (Int)
-			- maps: only check in provided maps (List)
-
-		Returns:
-			- True if address belongs to a writable address range (Bool)
-		"""
-		vmrange = self.get_vmrange(address)
-		if vmrange and "w" in vmrange[5]:
+		if pykd.isKernelDebugging():
+			return False
+		if "Write" in str(pykd.getVaProtect(address)):
 			return True
 		else:
 			return False
 
 	@memoized
 	def is_address(self, value):
-		"""
-		Check if a value is a valid address (belongs to a memory region)
-
-		Args:
-			- value (Int)
-			- maps: only check in provided maps (List)
-
-		Returns:
-			- True if value belongs to an address range (Bool)
-		"""
-		vmrange = self.get_vmrange(value)
-		return (vmrange is not None) and vmrange[5]!='---'
+		if is_int(value):
+			return pykd.isValid(value)
+		else:
+			return False
 
 	def get_disasm(self, address):
 		"""
@@ -818,22 +485,15 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		"""
 		if not address:
 			return (None, None)
-		code = pykd.dbgCommand("u %s L1" % (to_hex(address)))
-		if code:
-			codeline = code.split("\n")
-			func = codeline[0].strip()
-			
-			if re.match("^.*?:$",func):
-				func = func[:-1]
-			else:
-				return (None, None)
-			disasm = re.findall("[0-9a-f]{8} [0-9a-f]* *(.*?)$",codeline[1])[0]
+		if self.is_executable(address):
+			func = pykd.findSymbol(address)
+			disasm = pykd.disasm(address).instruction().split(" ",2)[-1].strip()
 			return (func, disasm)
 		else:
 			return (None, None)
 
 	@memoized
-	def examine_mem_reference(self, value, depth=4):
+	def examine_mem_reference(self, value, depth=5	):
 		"""
 		Deeply examine a value in memory for its references
 
@@ -848,7 +508,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			depth = 0xffffffff
 		(v, t, vn) = self.examine_mem_value(value)
 		if not vn:
-			result += [(v, t, vn)]
+			result += [(v, t, to_hex(vn))]
 
 		while vn:
 			if len(result) > depth:
@@ -856,18 +516,16 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				result[-1] = (_v, _t, "--> ...")
 				break
 
-			result += [(v, t, vn)]
+			result += [(v, t, to_hex(vn))]
 
-			if v == vn or to_int(v) == to_int(vn): # point to self
+			if is_str(vn):
 				break
-			if to_int(vn) is None:
+			if to_int(v) == vn or not self.is_address(vn): # point to self
 				break
-			if to_int(vn) in [to_int(v) for (v, _, _) in result]: # point back to previous value
-				result[-1] = (v,t,vn+"(head)")
+			if vn in [v for (v, _, _) in result]: # point back to previous value
+				result[-1] = (v,t,to_hex(vn)+"(head)")
 				break
-			(v, t, vn) = self.examine_mem_value(to_int(vn))
-
-
+			(v, t, vn) = self.examine_mem_value(vn)
 		return result
 
 	@memoized
@@ -879,25 +537,23 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			- value: value to examine (Int)
 
 		Returns:
-			- tuple of (value(Int), type(String), next_value(String))
+			- tuple of (value(Int), type(String), next_value(Int or String))
 		"""
-		def examine_data(value, bits=32):
-			out = pykd.dbgCommand("d%s %s" % ("q" if bits == 64 else "d", to_hex(value)))
-			if out:
-				out = out.split("  ",1)[1].split(" ",1)[0].strip()
-			step = int(bits//8)
+		def examine_data(value, step=4):
+			try:
+				out = pykd.loadQWords(value,1)[0] if step==8 else pykd.loadDWords(value,1)[0]
+				if self.is_address(out):
+					return out
+			except:
+				return value
+			str = pykd.loadCStr(value)
+			#str = pykd.loadWStr(value)
+			if is_printable(str):
+				if len(str)<step:
+					return "%x \"%s\"" % (out, str)
+				return str
+			return out 
 
-			if '????' not in out and is_printable(int2hexstr(to_int(out), step)):
-				stra = pykd.dbgCommand("da %s"%to_hex(value)).splitlines()
-				if stra:
-					stra = stra[0].split("  ",2)[1].strip()
-				stru = pykd.dbgCommand("du %s"%to_hex(value)).splitlines()
-				if stru:
-					stru = stru[0].split("  ",2)[1].strip()
-				if len(stra)<len(stru):
-					stra = stru
-				return stra
-			return out
 		if value is None:
 			return [0, '', '']
 
@@ -905,23 +561,22 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			result = (to_hex(value), "value", "")
 			return result
 
-		bits = self._target()['bits']
+		step = self._target()['addr_size']
 		# check for writable first so rwxp mem will be treated as data
 		if self.is_writable(value): # writable data address
-			out = examine_data(value, bits)
-			if out:
-				result = (to_hex(value), "data", out)
+			out = examine_data(value, step)
+			result = (to_hex(value), "data", out)
 
 		elif self.is_executable(value): # code/rodata address
 			(func,disasm) = self.get_disasm(value)
 			if func and disasm:
 				result = (to_hex(value), "code", "(%s : %s)" % (yellow(func),purple(disasm)))
 			else:
-				out = examine_data(value, bits)
+				out = examine_data(value, step)
 				result = (to_hex(value), "data", out)
 
 		else: # readonly data address
-			out = examine_data(value, bits)
+			out = examine_data(value, step)
 			if out:
 				result = (to_hex(value), "rodata", out)
 			else:
@@ -940,10 +595,6 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		step = self._target()['addr_size']
 		if not self.is_address(address): # cannot determine address
 			wprint("Invalid address: 0x%x"%address, "lightred", "black", 1)
-			return
-			for i in range(count):
-				if not pykd.dbgCommand("d%s %s" % ("q" if step == 8 else "d", hex(address + i*step))):
-					break
 			return
 		result = []
 		for i in range(count):
@@ -966,22 +617,18 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		return
 
-	def dumpmem(self, start, count=0, dc=''):
+	def dumpmem(self, start, count=0, step=''):
 		result = []
 		step = self._target()['addr_size']
 
 		if not dc:
 			dc = "d%s" % ("q" if step == 8 else "d")
 		if count is not None:
-			ret = pykd.dbgCommand("%s %s L%x" % (dc, to_hex(start), count))
-			if not ret:
+			try:
+				ret = pykd.loadQWords(value,count) if step==8 else pykd.loadDWords(value,count)
+			except:
 				error_msg("dump memory failed")
-			else:
-				lines = ret.strip().splitlines()
-				for line in lines:
-					line = line.split("  ")[1].replace("-"," ")
-					for mem in line.split():
-						result.append(to_int(mem))
+				return ""
 
 		if  result:
 			return result[:count]
@@ -1118,16 +765,9 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		Returns:
 			- list of tuple (address(Int), code(String), func_offset(String), comment(String))
 		"""
-		code = pykd.dbgCommand("ub %s L%s" % (to_hex(address), to_hex(count)))
-
-		if not code: 
-			return []
-
 		result = []
-		lines = code.splitlines()
-		for line in lines:
-			addr = line.split(" ", 1)[0]
-			addr = to_int(addr)
+		for offset in xrange(-count,0):
+			addr = pykd.disasm().findOffset(offset)
 			(func, code) = self.get_disasm(addr)
 			if not func or not code:
 				continue 
@@ -1162,30 +802,18 @@ class WinDbgAdaptor(DebuggerAdaptor):
 			prev_code = []
 
 		now_code = []
-		code = pykd.dbgCommand("u %s L%s" % (to_hex(pc), to_hex(count//2+1)))
-		hex_addr = "%x" % pc
-		if len(hex_addr) > 8:
-			hex_addr = "%s`%s" % (hex_addr[:-8], hex_addr[-8:])
-
-		if code and hex_addr in code:
-			lines = code.splitlines()
-			if "???" not in code:
-				for line in lines:
-					addr = line.split(" ", 1)[0]
-					comment = ""
-					if hex_addr in addr:
-						if jump==1:
-							comment = "JUMP is taken"
-						elif jump==-1:
-							comment = "JUMP is NOT taken"
-					addr = to_int(addr)
-					(func, code) = self.get_disasm(addr)
-					if not func or not code:
-						continue
-					now_code += [(addr, code, func, comment)]
-			else:
-				error_msg("The address is not available.")
-
+		for offset in xrange(0, count//2+1):
+			addr = pykd.disasm(pc).findOffset(offset)
+			comment = ""
+			if pc == addr:
+				if jump==1:
+					comment = "JUMP is taken"
+				elif jump==-1:
+					comment = "JUMP is NOT taken"
+			(func, code) = self.get_disasm(addr)
+			if not func or not code:
+				continue
+			now_code += [(addr, code, func, comment)]
 		return prev_code + now_code
 
 	def get_eflags(self):
@@ -1209,6 +837,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		flags = {"CF":0, "PF":0, "AF":0, "ZF":0, "SF":0, "TF":0, "IF":0, "DF":0, "OF":0}
 		eflags = self.get_reg("efl")
+
 		if not eflags:
 			return None
 		flags["CF"] = bool(eflags & EFLAGS_CF)
@@ -1230,8 +859,8 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		Returns:
 			- (status, address of target jumped instruction)
 		"""
-
 		flags = self.get_eflags()
+
 		if not flags:
 			return None
 
@@ -1242,7 +871,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 				return None
 
 		opcode = re.findall("[a-z]{1,5}", inst)[0]
-		next_addr = re.findall("\([0-9a-f`]*\)", inst.split()[-1])[0][1:-1]
+		next_addr = re.findall("\([0-9a-f`]*\)", inst)[0][1:-1]
 		if next_addr is None:
 			next_addr = 0
 		else:
@@ -1281,18 +910,18 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		return None
 
-	@validate_busy
-	@validate_target
+
+
 	def context(self,target_id=0):
-		wprint("[%s]" % "CDB-PIG".center(150, "-"),"lightred","black",1)
+		wprint("[%s]" % "CDB-PIG".center(200, "-"),"lightred","black",1)
 		self.context_register()
 		self.context_code()
 		self.context_stack()
 
-	@validate_busy
-	@validate_target
+
+
 	def context_register(self,target_id=0):
-		wprint("[%s]" % "registers".center(150, "-"),"lightblue","black",1)
+		wprint("[%s]" % "registers".center(200, "-"),"lightblue","black",1)
 		#text = ""
 		def get_reg_text(r, v):
 			text = green("%s" % r.upper().ljust(3)) + ": "
@@ -1323,7 +952,7 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		else:
 			(func,inst) = (None, None)
 
-		wprint("[%s]" % "disassemble".center(150, "-"),"lightblue","black",1)
+		wprint("[%s]" % "disassemble".center(200, "-"),"lightblue","black",1)
 		if inst: # valid $PC
 			text = []
 			opcode = inst.split("\t")[-1].split()[0].strip()
@@ -1360,10 +989,10 @@ class WinDbgAdaptor(DebuggerAdaptor):
 
 		return
 
-	@validate_busy
-	@validate_target
+
+
 	def context_stack(self,count=10):
-		wprint("[%s]" % "stack".center(150, "-"),"lightblue","black",1)
+		wprint("[%s]" % "stack".center(200, "-"),"lightblue","black",1)
 		text = ""
 		nowsp = self.sp()[1]
 		if self.is_address(nowsp):
@@ -1371,37 +1000,6 @@ class WinDbgAdaptor(DebuggerAdaptor):
 		else:
 			wprint("Invalid $SP address: 0x%x"%nowsp, "lightred", "black", 1)
 		return
-
-class EventHandler(pykd.eventHandler):
-	"""
-	Event handler for WinDbg/PyKD events.
-	"""
-	def __init__(self, adaptor, *args, **kwargs):
-		super(EventHandler, self).__init__(*args, **kwargs)
-		self.adaptor = adaptor
-
-	def onExecutionStatusChange(self, status):
-		if status == pykd.executionStatus.Break:
-			self.adaptor.update_state()
-
-
-class WinDbgCommand(DebuggerCommand):
-	"""
-	Debugger command class for WinDbg
-	"""
-	def __init__(self):
-		super(WinDbgCommand, self).__init__()
-		self.register_hooks()
-
-	def invoke(self, debugger, command, result, dict):
-		self.handle_command(command)
-
-	def register_hooks(self):
-		self.handler = EventHandler(self.adaptor)
-
-	def unregister_hooks(self):
-		del self.handler
-		self.handler = None
 
 from lib.utils import *
 
@@ -1458,8 +1056,7 @@ class Pig():
 			self.logo()
 			self.add_pig_cmd()
 			self.load_init()
-			self.debugger = WinDbgAdaptor(*args)
-			self.command = WinDbgCommand(*args)
+			self.command = DebuggerCommand(*args)
 		except Exception as e:
 			print(e)
 
@@ -1487,9 +1084,7 @@ class pigcmd():
 			ret = 0
 		if not ret:
 			try:
-				ret = pykd.dbgCommand("r %s"%aim).split('=')[1].strip()
-				if ret:
-					ret = to_int(ret)
+				ret = pykd.reg(aim)
 			except:
 				ret = 0
 		return ret
@@ -1552,7 +1147,7 @@ class pigcmd():
 			- address(hex)/register(string): if you choose disassemble, you can input place where you want to see. (optional)
 			- count(int): the number of instructions to disassemble. (optional)
 		"""
-		debugger = WinDbgAdaptor()
+		debugger = DebuggerAdaptor()
 		if not type:
 			debugger.context()
 		elif type == 'r':
@@ -1606,7 +1201,7 @@ class pigcmd():
 			- count(int)
 		"""
 		aim = self._get_aim(aim)
-		debugger = WinDbgAdaptor()
+		debugger = DebuggerAdaptor()
 		debugger.telescope(aim, int(count))
 
 	def reload(self):
@@ -1715,7 +1310,7 @@ class pigcmd():
 		start = self._get_aim(aim)
 		length = to_int(length)
 		end = start + length
-		debugger = WinDbgAdaptor()
+		debugger = DebuggerAdaptor()
 		mem = []
 		for i in xrange(start, end, 0x10000):
 			if i > end: i = end
