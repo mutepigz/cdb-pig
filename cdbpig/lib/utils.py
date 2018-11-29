@@ -193,6 +193,12 @@ def trim(docstring):
 	# Return a single string:
 	return '\n'.join(trimmed)
 
+def is_str(aim):
+	return type(aim) == type("")
+
+def is_int(aim):
+	return type(aim) == type(0) or type(aim) == type(10000000000000000000000000000000000000)
+
 def is_printable(text, printables=""):
 	"""
 	Check if a string is printable
@@ -239,6 +245,8 @@ def to_hex(num):
 	"""
 	Convert a number to hex format
 	"""
+	if not is_int(num):
+		return num
 	if num < 0:
 		return "-0x%x" % (-num)
 	else:
